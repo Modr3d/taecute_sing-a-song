@@ -36,7 +36,7 @@ client.on(Events.InteractionCreate, async interaction => {
     if (!interaction.isCommand()) return;
 
     const { commandName, options, guildId, member } = interaction;
-    const serverQueue = queues.get(guildId);
+    let serverQueue = queues.get(guildId);
 
     // ---------------- PLAY ----------------
     if (commandName === 'play') {
@@ -45,6 +45,8 @@ client.on(Events.InteractionCreate, async interaction => {
 
         const voiceChannel = member.voice.channel;
         if (!voiceChannel) return interaction.reply('เข้า voice channel ก่อนสิ!');
+
+        await interaction.deferReply(); // Defer ก่อนทำงานที่ใช้เวลานาน
 
         let song;
         try {
@@ -56,15 +58,16 @@ client.on(Events.InteractionCreate, async interaction => {
                 extractAudio: true
             });
 
-            if (!info || !info.url) return interaction.reply('❌ ไม่สามารถโหลดเพลงจาก YouTube ได้');
+            if (!info || !info.url) return interaction.editReply('❌ ไม่สามารถโหลดเพลงจาก YouTube ได้');
 
             song = { url: info.url, title: info.title };
         } catch (err) {
             console.error('youtube-dl error:', err);
-            return interaction.reply('❌ ไม่สามารถโหลดเพลงจาก YouTube ได้ ลอง URL อื่น');
+            return interaction.editReply('❌ ไม่สามารถโหลดเพลงจาก YouTube ได้ ลอง URL อื่น');
         }
 
         if (!serverQueue) {
+            // สร้าง queue ใหม่
             const queueContruct = {
                 voiceChannel,
                 connection: joinVoiceChannel({
@@ -74,7 +77,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 }),
                 songs: [],
                 player: createAudioPlayer({
-                    behaviors: { noSubscriber: NoSubscriberBehavior.Play } // เล่นต่อแม้ไม่มีคนอยู่
+                    behaviors: { noSubscriber: NoSubscriberBehavior.Play }
                 })
             };
 
@@ -86,7 +89,6 @@ client.on(Events.InteractionCreate, async interaction => {
                 if (queueContruct.songs.length > 0) {
                     playSong(guildId, queueContruct.songs[0]);
                 } else {
-                    // ไม่ disconnect อัตโนมัติ ให้ bot อยู่ต่อ
                     console.log('Queue ว่าง แต่ bot ยังคงอยู่ใน voice channel');
                 }
             });
@@ -101,11 +103,11 @@ client.on(Events.InteractionCreate, async interaction => {
 
             queueContruct.connection.subscribe(queueContruct.player);
 
-            await interaction.reply(`🎧 กำลังเล่น: **${song.title}**`);
+            await interaction.editReply(`🎧 กำลังเล่น: **${song.title}**`);
             playSong(guildId, song);
         } else {
             serverQueue.songs.push(song);
-            await interaction.reply(`✅ เพิ่มเพลงลง queue: **${song.title}**`);
+            await interaction.editReply(`✅ เพิ่มเพลงลง queue: **${song.title}**`);
             if (serverQueue.player.state.status === AudioPlayerStatus.Idle) {
                 playSong(guildId, serverQueue.songs[0]);
             }
@@ -114,38 +116,48 @@ client.on(Events.InteractionCreate, async interaction => {
 
     // ---------------- SKIP ----------------
     else if (commandName === 'skip') {
-        if (!serverQueue) return interaction.reply('ไม่มีเพลงเล่นอยู่');
+        await interaction.deferReply({ ephemeral: true }); // Defer แบบไม่โชว์ public
+        if (!serverQueue) return interaction.editReply('ไม่มีเพลงเล่นอยู่');
+
         serverQueue.player.stop();
-        await interaction.reply('ข้ามเพลงเรียบร้อย ✅');
+        await interaction.editReply('ข้ามเพลงเรียบร้อย ✅');
     }
 
     // ---------------- STOP ----------------
     else if (commandName === 'stop') {
-        if (!serverQueue) return interaction.reply('ไม่มีเพลงเล่นอยู่');
+        await interaction.deferReply({ ephemeral: true });
+        if (!serverQueue) return interaction.editReply('ไม่มีเพลงเล่นอยู่');
+
         serverQueue.songs = [];
         serverQueue.player.stop();
-        await interaction.reply('หยุดเพลงแล้ว ✅ แต่ bot ยังคงอยู่ใน voice channel');
+        await interaction.editReply('หยุดเพลงแล้ว ✅ แต่ bot ยังคงอยู่ใน voice channel');
     }
 
     // ---------------- NOW PLAYING ----------------
     else if (commandName === 'nowplaying') {
-        if (!serverQueue || serverQueue.songs.length === 0) return interaction.reply('ไม่มีเพลงเล่นอยู่');
+        await interaction.deferReply({ ephemeral: true });
+        if (!serverQueue || serverQueue.songs.length === 0) return interaction.editReply('ไม่มีเพลงเล่นอยู่');
+
         const embed = new EmbedBuilder()
             .setTitle('กำลังเล่น 🎵')
             .setDescription(`**${serverQueue.songs[0].title}**`)
             .setColor('Green');
-        await interaction.reply({ embeds: [embed] });
+
+        await interaction.editReply({ embeds: [embed] });
     }
 
     // ---------------- QUEUE ----------------
     else if (commandName === 'queue') {
-        if (!serverQueue || serverQueue.songs.length === 0) return interaction.reply('ไม่มีเพลงใน queue');
+        await interaction.deferReply({ ephemeral: true });
+        if (!serverQueue || serverQueue.songs.length === 0) return interaction.editReply('ไม่มีเพลงใน queue');
+
         const queueList = serverQueue.songs.map((song, i) => `${i + 1}. ${song.title}`).join('\n');
         const embed = new EmbedBuilder()
             .setTitle('Queue ของเพลง 🎶')
             .setDescription(queueList)
             .setColor('Blue');
-        await interaction.reply({ embeds: [embed] });
+
+        await interaction.editReply({ embeds: [embed] });
     }
 });
 
