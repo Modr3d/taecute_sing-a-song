@@ -27,11 +27,13 @@ client.on(Events.InteractionCreate, async interaction => {
 
     // ---------------- PLAY ----------------
     if (commandName === 'play') {
+        await interaction.deferReply(); // เพิ่ม deferReply สำหรับงานที่ใช้เวลานาน
+
         const url = options.getString('url');
-        if (!url) return interaction.reply('ส่ง URL YouTube ถูก ๆ มาหน่อย');
+        if (!url) return interaction.editReply('ส่ง URL YouTube ถูก ๆ มาหน่อย');
 
         const voiceChannel = member.voice.channel;
-        if (!voiceChannel) return interaction.reply('เข้า voice channel ก่อนสิ!');
+        if (!voiceChannel) return interaction.editReply('เข้า voice channel ก่อนสิ!');
 
         let song;
         try {
@@ -43,12 +45,12 @@ client.on(Events.InteractionCreate, async interaction => {
                 extractAudio: true
             });
 
-            if (!info || !info.url) return interaction.reply('❌ ไม่สามารถโหลดเพลงจาก YouTube ได้');
+            if (!info || !info.url) return interaction.editReply('❌ ไม่สามารถโหลดเพลงจาก YouTube ได้');
 
             song = { url: info.url, title: info.title };
         } catch (err) {
             console.error('youtube-dl error:', err);
-            return interaction.reply('❌ ไม่สามารถโหลดเพลงจาก YouTube ได้ ลอง URL อื่น');
+            return interaction.editReply('❌ ไม่สามารถโหลดเพลงจาก YouTube ได้ ลอง URL อื่น');
         }
 
         if (!serverQueue) {
@@ -89,11 +91,11 @@ client.on(Events.InteractionCreate, async interaction => {
 
             queueContruct.connection.subscribe(queueContruct.player);
 
-            await interaction.reply(`🎧 กำลังเล่น: **${song.title}**`);
+            await interaction.editReply(`🎧 กำลังเล่น: **${song.title}**`);
             playSong(guildId, song);
         } else {
             serverQueue.songs.push(song);
-            await interaction.reply(`✅ เพิ่มเพลงลง queue: **${song.title}**`);
+            await interaction.editReply(`✅ เพิ่มเพลงลง queue: **${song.title}**`);
             if (serverQueue.player.state.status === AudioPlayerStatus.Idle) {
                 playSong(guildId, serverQueue.songs[0]);
             }
