@@ -161,22 +161,19 @@ client.on(Events.InteractionCreate, async interaction => {
 });
 
 // ------------------- ฟังก์ชันเล่นเพลง -------------------
+const playdl = require("play-dl");
+
 async function playSong(guildId, song) {
     const serverQueue = queues.get(guildId);
     if (!song || !serverQueue) return;
 
-    console.log('🎧 Playing:', song.title, song.url);
+    const stream = await playdl.stream(song.url);
 
-    try {
-        const resource = createAudioResource(song.url); // ใช้ URL ที่ได้จาก yt-dlp
-        serverQueue.player.play(resource);
-    } catch (err) {
-        console.error('Error creating audio resource:', err);
-        serverQueue.songs.shift();
-        if (serverQueue.songs.length > 0) {
-            playSong(guildId, serverQueue.songs[0]);
-        }
-    }
+    const resource = createAudioResource(stream.stream, {
+        inputType: stream.type
+    });
+    serverQueue.player.play(resource);
 }
+
 
 client.login(process.env.DISCORD_TOKEN);

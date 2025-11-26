@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: my-bot
+    buildCommand: |
+      apt-get update
+      apt-get install -y python3 ffmpeg
+      npm install
+    startCommand: npm start
