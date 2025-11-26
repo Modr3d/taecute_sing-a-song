@@ -2,7 +2,7 @@ require('dotenv').config();
 
 const { Client, GatewayIntentBits, EmbedBuilder, Events } = require('discord.js');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, NoSubscriberBehavior, AudioPlayerStatus } = require('@discordjs/voice');
-const youtubedl = require('youtube-dl-exec');
+const ytdlp = require('yt-dlp-exec'); // ใช้ yt-dlp แทน youtube-dl
 const express = require('express');
 
 const client = new Client({
@@ -46,23 +46,24 @@ client.on(Events.InteractionCreate, async interaction => {
         const voiceChannel = member.voice.channel;
         if (!voiceChannel) return interaction.reply('เข้า voice channel ก่อนสิ!');
 
-        await interaction.deferReply(); // Defer ก่อนทำงานที่ใช้เวลานาน
+        await interaction.deferReply();
 
         let song;
         try {
-            const info = await youtubedl(url, {
+            // ใช้ yt-dlp ดึง URL เสียงแบบ bypass
+            const info = await ytdlp(url, {
                 dumpSingleJson: true,
                 noWarnings: true,
-                noCheckCertificate: true,
                 preferFreeFormats: true,
-                extractAudio: true
+                extractAudio: true,
+                youtubeSkipDashManifest: true
             });
 
             if (!info || !info.url) return interaction.editReply('❌ ไม่สามารถโหลดเพลงจาก YouTube ได้');
 
             song = { url: info.url, title: info.title };
         } catch (err) {
-            console.error('youtube-dl error:', err);
+            console.error('yt-dlp error:', err);
             return interaction.editReply('❌ ไม่สามารถโหลดเพลงจาก YouTube ได้ ลอง URL อื่น');
         }
 
@@ -88,8 +89,6 @@ client.on(Events.InteractionCreate, async interaction => {
                 queueContruct.songs.shift();
                 if (queueContruct.songs.length > 0) {
                     playSong(guildId, queueContruct.songs[0]);
-                } else {
-                    console.log('Queue ว่าง แต่ bot ยังคงอยู่ใน voice channel');
                 }
             });
 
@@ -116,7 +115,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
     // ---------------- SKIP ----------------
     else if (commandName === 'skip') {
-        await interaction.deferReply({ ephemeral: true }); // Defer แบบไม่โชว์ public
+        await interaction.deferReply({ ephemeral: true });
         if (!serverQueue) return interaction.editReply('ไม่มีเพลงเล่นอยู่');
 
         serverQueue.player.stop();
@@ -169,7 +168,7 @@ async function playSong(guildId, song) {
     console.log('🎧 Playing:', song.title, song.url);
 
     try {
-        const resource = createAudioResource(song.url);
+        const resource = createAudioResource(song.url); // ใช้ URL ที่ได้จาก yt-dlp
         serverQueue.player.play(resource);
     } catch (err) {
         console.error('Error creating audio resource:', err);
