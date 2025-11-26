@@ -1,0 +1,21 @@
+# Node.js dependencies
+node_modules/
+
+# dotenv file (เก็บ Token)
+.env
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# VSCode settings
+.vscode/
+
+# Optional: build output หรือไฟล์ชั่วคราว
+dist/
+build/
