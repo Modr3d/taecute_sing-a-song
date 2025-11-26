@@ -3,22 +3,35 @@ require('dotenv').config();
 const { Client, GatewayIntentBits, EmbedBuilder, Events } = require('discord.js');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, NoSubscriberBehavior, AudioPlayerStatus } = require('@discordjs/voice');
 const youtubedl = require('youtube-dl-exec');
+const express = require('express');
 
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildVoiceStates
+        GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.GuildMessages
     ]
 });
 
 // Queue ของแต่ละ server
 const queues = new Map();
 
+// ------------------- Keep-alive สำหรับ Render -------------------
+const app = express();
+app.get('/', (req, res) => res.send('Bot is alive!'));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`HTTP server running on port ${PORT}`));
+
+// ------------------- Error handler -------------------
+process.on('unhandledRejection', (err) => console.error('Unhandled Rejection:', err));
+process.on('uncaughtException', (err) => console.error('Uncaught Exception:', err));
+
+// ------------------- Bot ready -------------------
 client.once('ready', () => {
     console.log(`Logged in as ${client.user.tag}`);
 });
 
-// ฟัง Slash Commands
+// ------------------- Slash Commands -------------------
 client.on(Events.InteractionCreate, async interaction => {
     if (!interaction.isCommand()) return;
 
@@ -27,13 +40,11 @@ client.on(Events.InteractionCreate, async interaction => {
 
     // ---------------- PLAY ----------------
     if (commandName === 'play') {
-        await interaction.deferReply(); // เพิ่ม deferReply สำหรับงานที่ใช้เวลานาน
-
         const url = options.getString('url');
-        if (!url) return interaction.editReply('ส่ง URL YouTube ถูก ๆ มาหน่อย');
+        if (!url) return interaction.reply('ส่ง URL YouTube ถูก ๆ มาหน่อย');
 
         const voiceChannel = member.voice.channel;
-        if (!voiceChannel) return interaction.editReply('เข้า voice channel ก่อนสิ!');
+        if (!voiceChannel) return interaction.reply('เข้า voice channel ก่อนสิ!');
 
         let song;
         try {
@@ -45,12 +56,12 @@ client.on(Events.InteractionCreate, async interaction => {
                 extractAudio: true
             });
 
-            if (!info || !info.url) return interaction.editReply('❌ ไม่สามารถโหลดเพลงจาก YouTube ได้');
+            if (!info || !info.url) return interaction.reply('❌ ไม่สามารถโหลดเพลงจาก YouTube ได้');
 
             song = { url: info.url, title: info.title };
         } catch (err) {
             console.error('youtube-dl error:', err);
-            return interaction.editReply('❌ ไม่สามารถโหลดเพลงจาก YouTube ได้ ลอง URL อื่น');
+            return interaction.reply('❌ ไม่สามารถโหลดเพลงจาก YouTube ได้ ลอง URL อื่น');
         }
 
         if (!serverQueue) {
@@ -62,7 +73,9 @@ client.on(Events.InteractionCreate, async interaction => {
                     adapterCreator: voiceChannel.guild.voiceAdapterCreator
                 }),
                 songs: [],
-                player: createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Pause } })
+                player: createAudioPlayer({
+                    behaviors: { noSubscriber: NoSubscriberBehavior.Play } // เล่นต่อแม้ไม่มีคนอยู่
+                })
             };
 
             queueContruct.songs.push(song);
@@ -73,8 +86,8 @@ client.on(Events.InteractionCreate, async interaction => {
                 if (queueContruct.songs.length > 0) {
                     playSong(guildId, queueContruct.songs[0]);
                 } else {
-                    queueContruct.connection.destroy();
-                    queues.delete(guildId);
+                    // ไม่ disconnect อัตโนมัติ ให้ bot อยู่ต่อ
+                    console.log('Queue ว่าง แต่ bot ยังคงอยู่ใน voice channel');
                 }
             });
 
@@ -83,19 +96,16 @@ client.on(Events.InteractionCreate, async interaction => {
                 queueContruct.songs.shift();
                 if (queueContruct.songs.length > 0) {
                     playSong(guildId, queueContruct.songs[0]);
-                } else {
-                    queueContruct.connection.destroy();
-                    queues.delete(guildId);
                 }
             });
 
             queueContruct.connection.subscribe(queueContruct.player);
 
-            await interaction.editReply(`🎧 กำลังเล่น: **${song.title}**`);
+            await interaction.reply(`🎧 กำลังเล่น: **${song.title}**`);
             playSong(guildId, song);
         } else {
             serverQueue.songs.push(song);
-            await interaction.editReply(`✅ เพิ่มเพลงลง queue: **${song.title}**`);
+            await interaction.reply(`✅ เพิ่มเพลงลง queue: **${song.title}**`);
             if (serverQueue.player.state.status === AudioPlayerStatus.Idle) {
                 playSong(guildId, serverQueue.songs[0]);
             }
@@ -114,9 +124,7 @@ client.on(Events.InteractionCreate, async interaction => {
         if (!serverQueue) return interaction.reply('ไม่มีเพลงเล่นอยู่');
         serverQueue.songs = [];
         serverQueue.player.stop();
-        serverQueue.connection.destroy();
-        queues.delete(guildId);
-        await interaction.reply('หยุดเพลงและออกจาก voice channel ✅');
+        await interaction.reply('หยุดเพลงแล้ว ✅ แต่ bot ยังคงอยู่ใน voice channel');
     }
 
     // ---------------- NOW PLAYING ----------------
@@ -141,7 +149,7 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 });
 
-// ฟังก์ชันเล่นเพลง
+// ------------------- ฟังก์ชันเล่นเพลง -------------------
 async function playSong(guildId, song) {
     const serverQueue = queues.get(guildId);
     if (!song || !serverQueue) return;
@@ -149,16 +157,13 @@ async function playSong(guildId, song) {
     console.log('🎧 Playing:', song.title, song.url);
 
     try {
-        const resource = createAudioResource(song.url); // ใช้ URL จาก youtube-dl-exec
+        const resource = createAudioResource(song.url);
         serverQueue.player.play(resource);
     } catch (err) {
         console.error('Error creating audio resource:', err);
         serverQueue.songs.shift();
         if (serverQueue.songs.length > 0) {
             playSong(guildId, serverQueue.songs[0]);
-        } else {
-            serverQueue.connection.destroy();
-            queues.delete(guildId);
         }
     }
 }
